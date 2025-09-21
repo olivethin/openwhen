@@ -1,3 +1,4 @@
+//Account.js
 import { useEffect, useState } from 'react';
 import { Alert, View, Text, TextInput, Button, StyleSheet } from 'react-native';
 import { supabase } from '../supabase/supabase';

@@ -1,3 +1,4 @@
+//Auth.js
 import { useState } from 'react';
 import { Alert, View, TextInput, Button, StyleSheet, Text } from 'react-native';
 import { supabase } from '../supabase/supabase';

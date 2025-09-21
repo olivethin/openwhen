@@ -1,44 +1,18 @@
-// screens/AccountScreen.js
-import React, { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from "react-native";
-import { supabase } from "../supabase/supabase";
+//AccountScreen
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { supabase } from '../supabase/supabase';
 
-export default function AccountScreen({ route, navigation }) {
-  const [username, setUsername] = useState("");
+export default function AccountScreen({ navigation }) {
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchProfile = async () => {
+    const fetchUser = async () => {
       try {
-        // If username passed from navigation (after registration/sign-in)
-        if (route.params?.username) {
-          setUsername(route.params.username);
-          setLoading(false);
-          return;
-        }
-
-        // Otherwise fetch from Supabase
         const { data: { session } } = await supabase.auth.getSession();
-
-        if (!session?.user) {
-          navigation.replace("Register");
-          return;
-        }
-
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("username")
-          .eq("id", session.user.id)
-          .maybeSingle();
-
-        if (error) throw error;
-
-        if (!data?.username) {
-          setUsername("User"); // fallback if username not found
-        } else {
-          setUsername(data.username);
-        }
-
+        if (!session?.user) throw new Error("Not signed in");
+        setUser(session.user);
       } catch (err) {
         Alert.alert(err.message);
       } finally {
@@ -46,57 +20,53 @@ export default function AccountScreen({ route, navigation }) {
       }
     };
 
-    fetchProfile();
+    fetchUser();
   }, []);
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigation.replace("Register");
+    try {
+      await supabase.auth.signOut();
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Register' }],
+      });
+    } catch (err) {
+      Alert.alert(err.message);
+    }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#7FB3D5" />
-      </View>
-    );
-  }
+  if (loading) return <ActivityIndicator size="large" style={{ flex: 1, justifyContent: 'center' }} />;
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Hello, {username}!</Text>
+    <View style={{ flex: 1, padding: 16, backgroundColor: '#FDF6E3', justifyContent: 'flex-start' }}>
+      <Text style={{ fontSize: 28, fontWeight: 'bold', marginBottom: 20, marginTop: 40 }}>
+        Hello, {user?.email || 'User'}!
+      </Text>
 
-      <TouchableOpacity style={styles.button} onPress={handleSignOut}>
-        <Text style={styles.buttonText}>Sign Out</Text>
+      <TouchableOpacity
+        style={{
+          backgroundColor: '#7FB3D5',
+          padding: 16,
+          borderRadius: 8,
+          alignItems: 'center',
+          marginBottom: 12
+        }}
+        onPress={() => navigation.navigate('CapsuleList')}
+      >
+        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>Go to My Capsules</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={{
+          backgroundColor: '#E57373',
+          padding: 16,
+          borderRadius: 8,
+          alignItems: 'center',
+        }}
+        onPress={handleSignOut}
+      >
+        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>Sign Out</Text>
       </TouchableOpacity>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FDF6E3", // beige
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#7FB3D5", // pastel blue
-    marginBottom: 20,
-  },
-  button: {
-    backgroundColor: "#7FB3D5",
-    padding: 15,
-    borderRadius: 8,
-    alignItems: "center",
-    width: "60%",
-  },
-  buttonText: {
-    color: "#FDF6E3",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-});

@@ -1,19 +1,15 @@
-import { Button, Text, View } from 'react-native';
-import { supabase } from '../supabase/supabase';
+//supabase.js
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createClient } from '@supabase/supabase-js';
 
-export default function HomePage() {
-  const signInAnonymously = async () => {
-    const { data, error } = await supabase.auth.signInWithOtp({
-      email: 'test@example.com',  // replace with your test email
-    });
-    if (error) console.log('Error:', error);
-    else console.log('Sign in email sent:', data);
-  };
+const supabaseUrl = "https://ihomgoweezexpwvuzpeb.supabase.co";
+const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlob21nb3dlZXpleHB3dnV6cGViIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5NjAyODEsImV4cCI6MjA3MzUzNjI4MX0.2dfqLT7-morQryeLOhJ97-SR6erKZrvOdM3pdx0CRGI";
 
-  return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-      <Text>Welcome to OpenWhen!</Text>
-      <Button title="Sign in" onPress={signInAnonymously} />
-    </View>
-  );
-}
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storage: AsyncStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
+});
