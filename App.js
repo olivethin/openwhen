@@ -15,6 +15,10 @@ import CreateCapsuleScreen from "./screens/CreateCapsuleScreen";
 import CapsuleDetailScreen from "./screens/CapsuleDetailScreen";
 import WrittenMessagesScreen from "./screens/WrittenMessagesScreen";
 
+// CP3 Screens
+import AudioFilesScreen from "./screens/AudioFilesScreen";
+import ImageFilesScreen from "./screens/ImageFilesScreen";
+
 const Stack = createNativeStackNavigator();
 
 export default function App() {
@@ -67,6 +71,18 @@ export default function App() {
           name="WrittenMessages"
           component={WrittenMessagesScreen}
           options={{ title: "Written Messages" }}
+        />
+
+        {/* CP3 Screens */}
+        <Stack.Screen
+          name="AudioFiles"
+          component={AudioFilesScreen}
+          options={{ title: "Audio Files" }}
+        />
+        <Stack.Screen
+          name="ImageFiles"
+          component={ImageFilesScreen}
+          options={{ title: "Image Files" }}
         />
       </Stack.Navigator>
     </NavigationContainer>

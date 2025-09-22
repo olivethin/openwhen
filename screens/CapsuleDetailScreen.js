@@ -1,3 +1,4 @@
+// CapsuleDetailScreen.js
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 
@@ -17,14 +18,14 @@ export default function CapsuleDetailScreen({ route, navigation }) {
 
       <TouchableOpacity
         style={styles.optionButton}
-        onPress={() => alert("Audio Files screen coming soon")}
+        onPress={() => navigation.navigate("AudioFiles", { capsule })}
       >
         <Text style={styles.optionText}> Audio Files</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
         style={styles.optionButton}
-        onPress={() => alert("Image Files screen coming soon")}
+        onPress={() => navigation.navigate("ImageFiles", { capsule })}
       >
         <Text style={styles.optionText}> Image Files</Text>
       </TouchableOpacity>
