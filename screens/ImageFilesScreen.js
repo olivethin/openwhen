@@ -1,4 +1,4 @@
-//ImagesFilesScreen
+// ImageMessagesScreen.js
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -11,11 +11,11 @@ import {
   ActivityIndicator,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system/legacy"; 
+import * as FileSystem from "expo-file-system/legacy";
 import { supabase } from "../supabase/supabase";
 
 export default function ImageMessagesScreen({ route }) {
-  const { capsule } = route.params; 
+  const { capsule } = route.params;
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -49,11 +49,11 @@ export default function ImageMessagesScreen({ route }) {
     }
   };
 
-  // Upload image
+  // Pick & upload image
   const pickAndUploadImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ImagePicker.MediaTypeOptions.All, // ✅ allow photos + videos
         allowsEditing: true,
         quality: 1,
       });
@@ -61,11 +61,17 @@ export default function ImageMessagesScreen({ route }) {
       if (result.canceled) return;
 
       const asset = result.assets?.[0];
-      if (!asset) throw new Error("No image selected");
+      if (!asset) throw new Error("No file selected");
+
+      // ✅ Reject if the user picked a video
+      if (asset.type === "video") {
+        Alert.alert("Invalid file", "Videos are not allowed. Please select an image.");
+        return;
+      }
 
       const fileUri = asset.uri;
       const fileName = fileUri.split("/").pop();
-      const storagePath = `${capsule.id}/${fileName}`; // ✅ needed for deletion
+      const storagePath = `${capsule.id}/${fileName}`; // needed for deletion
 
       setLoading(true);
 
@@ -101,7 +107,7 @@ export default function ImageMessagesScreen({ route }) {
           capsule_id: capsule.id,
           user_id: userId,
           file_url: fileUrl,
-          storage_path: storagePath, // ✅ now saved
+          storage_path: storagePath, // saved for deletion
         },
       ]);
       if (tableError) throw tableError;
@@ -190,3 +196,4 @@ const styles = StyleSheet.create({
   buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
   image: { width: 150, height: 150, borderRadius: 8, marginRight: 10 },
 });
+
