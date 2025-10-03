@@ -9,9 +9,10 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  Image,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system/legacy"; // kept as-is for now
+import * as FileSystem from "expo-file-system/legacy";
 import { Audio } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -23,12 +24,10 @@ export default function AudioFilesScreen({ route }) {
   const [audioFiles, setAudioFiles] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // playback state
   const [sound, setSound] = useState(null);
   const [currentId, setCurrentId] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Configure iOS audio
   useEffect(() => {
     const setupAudio = async () => {
       await Audio.setAudioModeAsync({
@@ -44,16 +43,14 @@ export default function AudioFilesScreen({ route }) {
     };
   }, [sound]);
 
-  // Fetch audio files
   const fetchAudioFiles = async () => {
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from("audios")
-        .select("*") // if display_name exists, it will be included
+        .select("*")
         .eq("capsule_id", capsule.id)
         .order("created_at", { ascending: false });
-
       if (error) throw error;
       setAudioFiles(data || []);
     } catch (err) {
@@ -67,7 +64,6 @@ export default function AudioFilesScreen({ route }) {
     fetchAudioFiles();
   }, []);
 
-  // helper: prompt for a name (iOS native prompt; else fallback to default)
   const askForName = (suggested) =>
     new Promise((resolve) => {
       if (Platform.OS === "ios" && typeof Alert.prompt === "function") {
@@ -76,21 +72,16 @@ export default function AudioFilesScreen({ route }) {
           "Enter a display name for this audio",
           [
             { text: "Cancel", style: "cancel", onPress: () => resolve(null) },
-            {
-              text: "Save",
-              onPress: (text) => resolve((text || suggested).trim() || suggested),
-            },
+            { text: "Save", onPress: (t) => resolve((t || suggested).trim() || suggested) },
           ],
           "plain-text",
           suggested
         );
       } else {
-        // No prompt available (Android/web Expo Go), use suggested
         resolve(suggested);
       }
     });
 
-  // Pick & upload audio
   const pickAudioFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: "*/*" });
@@ -98,80 +89,45 @@ export default function AudioFilesScreen({ route }) {
 
       const file = result.assets?.[0];
       if (!file) throw new Error("No file selected");
-
-      // reject invalid file types
       if (!file.name.match(/\.(mp3|wav|m4a)$/i)) {
-        Alert.alert(
-          "Invalid file",
-          "Only audio files are supported (mp3, wav, m4a)."
-        );
+        Alert.alert("Invalid file","Only audio files are supported (mp3, wav, m4a).");
         return;
       }
 
-      // get a name from user (or use filename without extension)
       const baseName = file.name.replace(/\.(mp3|wav|m4a)$/i, "");
       const displayName = await askForName(baseName);
-      if (displayName === null) return; // user cancelled
+      if (displayName === null) return;
 
       setLoading(true);
 
-      // Get session user
       const { data: sessionData } = await supabase.auth.getSession();
       const user = sessionData?.session?.user;
       if (!user) throw new Error("No user session found");
 
-      // Read as base64 (kept as-is with your current code)
-      const fileBase64 = await FileSystem.readAsStringAsync(file.uri, {
-        encoding: "base64",
-      });
-      const byteArray = Uint8Array.from(atob(fileBase64), (c) =>
-        c.charCodeAt(0)
-      );
+      const fileBase64 = await FileSystem.readAsStringAsync(file.uri, { encoding: "base64" });
+      const byteArray = Uint8Array.from(atob(fileBase64), (c) => c.charCodeAt(0));
 
       const storagePath = `audio/${capsule.id}/${file.name}`;
-
-      // Upload
       const { error: uploadError } = await supabase.storage
         .from("capsules")
         .upload(storagePath, byteArray, { upsert: true });
       if (uploadError) throw uploadError;
 
-      // Get URL
-      const { data: urlData } = supabase.storage
-        .from("capsules")
-        .getPublicUrl(storagePath);
+      const { data: urlData } = supabase.storage.from("capsules").getPublicUrl(storagePath);
       const fileUrl = urlData.publicUrl;
 
-      // Insert DB row (try to save display_name; if column missing it will throw)
       let insertErr = null;
       const { error: insertError } = await supabase.from("audios").insert([
-        {
-          capsule_id: capsule.id,
-          user_id: user.id,
-          file_url: fileUrl,
-          storage_path: storagePath,
-          display_name: displayName, // requires column in table
-        },
+        { capsule_id: capsule.id, user_id: user.id, file_url: fileUrl, storage_path: storagePath, display_name: displayName },
       ]);
       insertErr = insertError;
 
-      // Fallback if display_name column doesn't exist
       if (insertErr && /column .*display_name/i.test(insertErr.message)) {
-        // try without display_name so upload still works
         const { error: insertNoNameError } = await supabase.from("audios").insert([
-          {
-            capsule_id: capsule.id,
-            user_id: user.id,
-            file_url: fileUrl,
-            storage_path: storagePath,
-          },
+          { capsule_id: capsule.id, user_id: user.id, file_url: fileUrl, storage_path: storagePath },
         ]);
         if (insertNoNameError) throw insertNoNameError;
-
-        Alert.alert(
-          "Uploaded (without name)",
-          "To save names, add a 'display_name text' column to the 'audios' table."
-        );
+        Alert.alert("Uploaded (without name)","To save names, add a 'display_name text' column to the 'audios' table.");
       }
 
       fetchAudioFiles();
@@ -182,33 +138,23 @@ export default function AudioFilesScreen({ route }) {
     }
   };
 
-  // Play/Pause per item
   const togglePlayback = async (item) => {
     try {
-      // same item and currently playing -> pause
       if (currentId === item.id && sound && isPlaying) {
         await sound.pauseAsync();
         setIsPlaying(false);
         return;
       }
-
-      // same item but paused -> resume
       if (currentId === item.id && sound && !isPlaying) {
         await sound.playAsync();
         setIsPlaying(true);
         return;
       }
-
-      // switching to a different item
       if (sound) {
         await sound.unloadAsync();
         setSound(null);
       }
-
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: item.file_url },
-        { shouldPlay: true }
-      );
+      const { sound: newSound } = await Audio.Sound.createAsync({ uri: item.file_url }, { shouldPlay: true });
       setSound(newSound);
       setCurrentId(item.id);
       setIsPlaying(true);
@@ -225,7 +171,6 @@ export default function AudioFilesScreen({ route }) {
     }
   };
 
-  // Rename saved audio
   const renameAudio = (item) => {
     const suggested =
       item.display_name ||
@@ -241,21 +186,12 @@ export default function AudioFilesScreen({ route }) {
             onPress: async (text) => {
               const newName = (text || suggested).trim() || suggested;
               try {
-                const { error } = await supabase
-                  .from("audios")
-                  .update({ display_name: newName })
-                  .eq("id", item.id);
+                const { error } = await supabase.from("audios").update({ display_name: newName }).eq("id", item.id);
                 if (error) throw error;
-                // refresh locally
-                setAudioFiles((prev) =>
-                  prev.map((a) => (a.id === item.id ? { ...a, display_name: newName } : a))
-                );
+                setAudioFiles((prev) => prev.map((a) => (a.id === item.id ? { ...a, display_name: newName } : a)));
               } catch (err) {
                 if (/column .*display_name/i.test(err.message)) {
-                  Alert.alert(
-                    "Add column required",
-                    "Please add 'display_name text' to the 'audios' table to enable naming."
-                  );
+                  Alert.alert("Add column required","Please add 'display_name text' to the 'audios' table to enable naming.");
                 } else {
                   Alert.alert("Rename failed", err.message);
                 }
@@ -269,12 +205,11 @@ export default function AudioFilesScreen({ route }) {
     } else {
       Alert.alert(
         "Not supported",
-        "Inline rename requires 'display_name' column and iOS prompt. On other platforms, add the column and we can wire a custom rename UI."
+        "Inline rename requires 'display_name' column and iOS prompt. We can add a custom rename UI if you’d like."
       );
     }
   };
 
-  // Delete
   const deleteAudio = async (item) => {
     Alert.alert("Delete Audio", "Are you sure you want to delete this file?", [
       { text: "Cancel", style: "cancel" },
@@ -287,8 +222,6 @@ export default function AudioFilesScreen({ route }) {
             await supabase.storage.from("capsules").remove([item.storage_path]);
             await supabase.from("audios").delete().eq("id", item.id);
             setAudioFiles((prev) => prev.filter((a) => a.id !== item.id));
-
-            // stop playback if we deleted current
             if (currentId === item.id && sound) {
               await sound.unloadAsync();
               setSound(null);
@@ -308,7 +241,6 @@ export default function AudioFilesScreen({ route }) {
   const renderItem = ({ item }) => {
     const filename = item.file_url ? item.file_url.split("/").pop() : "audio";
     const display = item.display_name || filename;
-
     const thisIsPlaying = currentId === item.id && isPlaying;
 
     return (
@@ -321,34 +253,18 @@ export default function AudioFilesScreen({ route }) {
             style={[styles.controlBtn, { backgroundColor: "#E0F0FF" }]}
             onPress={() => togglePlayback(item)}
           >
-            <Ionicons
-              name={thisIsPlaying ? "pause" : "play"}
-              size={16}
-              color="#0f172a"
-            />
-            <Text style={styles.controlBtnText}>
-              {thisIsPlaying ? "Pause" : "Play"}
-            </Text>
+            <Ionicons name={thisIsPlaying ? "pause" : "play"} size={16} color="#0f172a" />
+            <Text style={styles.controlBtnText}>{thisIsPlaying ? "Pause" : "Play"}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.controlBtn, { backgroundColor: "#FFF7F9" }]}
-            onPress={() => renameAudio(item)}
-          >
+          <TouchableOpacity style={[styles.controlBtn, { backgroundColor: "#FFF7F9" }]} onPress={() => renameAudio(item)}>
             <Feather name="edit-2" size={16} color="#E75480" />
-            <Text style={[styles.controlBtnText, { color: "#E75480" }]}>
-              Rename
-            </Text>
+            <Text style={[styles.controlBtnText, { color: "#E75480" }]}>Rename</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.controlBtn, { backgroundColor: "#FADADD" }]}
-            onPress={() => deleteAudio(item)}
-          >
+          <TouchableOpacity style={[styles.controlBtn, { backgroundColor: "#FADADD" }]} onPress={() => deleteAudio(item)}>
             <Feather name="trash-2" size={16} color="#E75480" />
-            <Text style={[styles.controlBtnText, { color: "#E75480" }]}>
-              Delete
-            </Text>
+            <Text style={[styles.controlBtnText, { color: "#E75480" }]}>Delete</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -356,30 +272,22 @@ export default function AudioFilesScreen({ route }) {
   };
 
   return (
-    <LinearGradient
-      colors={["#FDF6E3", "#7FB3D5"]} // beige → pastel blue
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={{ flex: 1 }}
-    >
+    <LinearGradient colors={["#FDF6E3", "#7FB3D5"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1 }}>
-        {/* Header */}
+        {/* Compact header (text only) */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Audio Files</Text>
         </View>
 
+        {/* Big decorative image (independent from header) */}
+        <View pointerEvents="none" style={styles.heroImageWrap}>
+          <Image source={require("../assets/boo.png")} style={styles.heroImage} resizeMode="contain" />
+        </View>
+
         {/* Card container */}
         <View style={styles.containerCard}>
-          <TouchableOpacity
-            style={styles.primaryBtn}
-            onPress={pickAudioFile}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FDF6E3" />
-            ) : (
-              <Text style={styles.primaryBtnText}>+ Upload Audio</Text>
-            )}
+          <TouchableOpacity style={styles.primaryBtn} onPress={pickAudioFile} disabled={loading}>
+            {loading ? <ActivityIndicator color="#FDF6E3" /> : <Text style={styles.primaryBtnText}>+ Upload Audio</Text>}
           </TouchableOpacity>
 
           {loading ? (
@@ -402,7 +310,6 @@ export default function AudioFilesScreen({ route }) {
 }
 
 const styles = StyleSheet.create({
-  // header
   header: {
     paddingHorizontal: 16,
     paddingTop: 10,
@@ -416,7 +323,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  // white card
+  // Large independent image
+  heroImageWrap: {
+    position: "absolute",
+    top: 6,
+    right: 16,
+    zIndex: 0,
+    opacity: 1,
+  },
+  heroImage: {
+    width: 180,  // ⬅️ bigger image
+    height: 180,
+  },
+
   containerCard: {
     flex: 1,
     marginHorizontal: 16,
@@ -439,7 +358,6 @@ const styles = StyleSheet.create({
 
   loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
 
-  // list item
   fileItem: {
     padding: 12,
     backgroundColor: "#F8FAFF",
@@ -450,11 +368,7 @@ const styles = StyleSheet.create({
   fileName: { fontSize: 16, fontWeight: "700", color: "#0f172a" },
   fileSub: { fontSize: 12, color: "#64748b", marginTop: 2 },
 
-  controlsRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 10,
-  },
+  controlsRow: { flexDirection: "row", gap: 8, marginTop: 10 },
   controlBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -463,9 +377,5 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 999,
   },
-  controlBtnText: {
-    fontSize: 13,
-    color: "#0f172a",
-    fontWeight: "600",
-  },
+  controlBtnText: { fontSize: 13, color: "#0f172a", fontWeight: "600" },
 });

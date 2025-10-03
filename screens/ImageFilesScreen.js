@@ -13,7 +13,7 @@ import {
   Platform,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system/legacy"; // kept as-is per your code
+import * as FileSystem from "expo-file-system/legacy";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -30,24 +30,19 @@ export default function ImageMessagesScreen({ route }) {
     (async () => {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert(
-          "Permission required",
-          "Camera roll permissions are needed to upload images."
-        );
+        Alert.alert("Permission required","Camera roll permissions are needed to upload images.");
       }
     })();
     fetchImages();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchImages = async () => {
     try {
       const { data, error } = await supabase
         .from("images")
-        .select("*") // includes display_caption if the column exists
+        .select("*")
         .eq("capsule_id", capsule.id)
         .order("created_at", { ascending: false });
-
       if (error) throw error;
       setImages(data || []);
     } catch (err) {
@@ -55,7 +50,6 @@ export default function ImageMessagesScreen({ route }) {
     }
   };
 
-  // iOS prompt helper (falls back to default)
   const askForCaption = (suggested = "") =>
     new Promise((resolve) => {
       if (Platform.OS === "ios" && typeof Alert.prompt === "function") {
@@ -70,7 +64,6 @@ export default function ImageMessagesScreen({ route }) {
           suggested
         );
       } else {
-        // On Android/web (Expo Go), use empty caption by default
         resolve("");
       }
     });
@@ -78,17 +71,14 @@ export default function ImageMessagesScreen({ route }) {
   const pickAndUploadImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.All, // allow photos + videos
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
         allowsEditing: true,
         quality: 1,
       });
-
       if (result.canceled) return;
 
       const asset = result.assets?.[0];
       if (!asset) throw new Error("No file selected");
-
-      // Reject videos
       if (asset.type === "video") {
         Alert.alert("Invalid file", "Videos are not allowed. Please select an image.");
         return;
@@ -97,13 +87,10 @@ export default function ImageMessagesScreen({ route }) {
       const fileUri = asset.uri;
       const fileName = fileUri.split("/").pop();
       const storagePath = `${capsule.id}/${fileName}`;
-
-      // Ask for caption
       const userCaption = await askForCaption("");
 
       setLoading(true);
 
-      // Get user
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
       if (!userData?.user) throw new Error("User not logged in");
@@ -111,25 +98,17 @@ export default function ImageMessagesScreen({ route }) {
 
       if (!capsule?.id) throw new Error("Capsule ID missing");
 
-      // Read file → bytes
-      const fileBase64 = await FileSystem.readAsStringAsync(fileUri, {
-        encoding: "base64",
-      });
+      const fileBase64 = await FileSystem.readAsStringAsync(fileUri, { encoding: "base64" });
       const byteArray = Uint8Array.from(atob(fileBase64), (c) => c.charCodeAt(0));
 
-      // Upload to storage
       const { error: uploadError } = await supabase.storage
         .from("capsules")
         .upload(storagePath, byteArray, { upsert: true });
       if (uploadError) throw uploadError;
 
-      // Public URL
-      const { data: urlData } = supabase.storage
-        .from("capsules")
-        .getPublicUrl(storagePath);
+      const { data: urlData } = supabase.storage.from("capsules").getPublicUrl(storagePath);
       const fileUrl = urlData.publicUrl;
 
-      // Insert into DB with caption (if column exists)
       let insertErr = null;
       const { error: insertWithCaptionErr } = await supabase.from("images").insert([
         {
@@ -137,27 +116,17 @@ export default function ImageMessagesScreen({ route }) {
           user_id: userId,
           file_url: fileUrl,
           storage_path: storagePath,
-          display_caption: userCaption, // requires the column
+          display_caption: userCaption,
         },
       ]);
       insertErr = insertWithCaptionErr;
 
-      // Fallback if column is missing
       if (insertErr && /column .*display_caption/i.test(insertErr.message)) {
         const { error: insertNoCaptionErr } = await supabase.from("images").insert([
-          {
-            capsule_id: capsule.id,
-            user_id: userId,
-            file_url: fileUrl,
-            storage_path: storagePath,
-          },
+          { capsule_id: capsule.id, user_id: userId, file_url: fileUrl, storage_path: storagePath },
         ]);
         if (insertNoCaptionErr) throw insertNoCaptionErr;
-
-        Alert.alert(
-          "Uploaded (without caption)",
-          "To save captions, add a 'display_caption text' column to the 'images' table."
-        );
+        Alert.alert("Uploaded (without caption)","To save captions, add a 'display_caption text' column to the 'images' table.");
       }
 
       fetchImages();
@@ -176,26 +145,14 @@ export default function ImageMessagesScreen({ route }) {
 
   const saveCaption = async (itemId) => {
     try {
-      const { error } = await supabase
-        .from("images")
-        .update({ display_caption: editingCaption })
-        .eq("id", itemId);
-
+      const { error } = await supabase.from("images").update({ display_caption: editingCaption }).eq("id", itemId);
       if (error) throw error;
-
-      setImages((prev) =>
-        prev.map((img) =>
-          img.id === itemId ? { ...img, display_caption: editingCaption } : img
-        )
-      );
+      setImages((prev) => prev.map((img) => (img.id === itemId ? { ...img, display_caption: editingCaption } : img)));
       setEditingId(null);
       setEditingCaption("");
     } catch (err) {
       if (/column .*display_caption/i.test(err.message)) {
-        Alert.alert(
-          "Add column required",
-          "Please add 'display_caption text' to the 'images' table to enable captions."
-        );
+        Alert.alert("Add column required","Please add 'display_caption text' to the 'images' table to enable captions.");
       } else {
         Alert.alert("Save failed", err.message);
       }
@@ -211,21 +168,10 @@ export default function ImageMessagesScreen({ route }) {
         onPress: async () => {
           try {
             setLoading(true);
-
-            // Storage
-            const { error: storageError } = await supabase.storage
-              .from("capsules")
-              .remove([item.storage_path]);
+            const { error: storageError } = await supabase.storage.from("capsules").remove([item.storage_path]);
             if (storageError) throw storageError;
-
-            // Table
-            const { error: tableError } = await supabase
-              .from("images")
-              .delete()
-              .eq("id", item.id);
+            const { error: tableError } = await supabase.from("images").delete().eq("id", item.id);
             if (tableError) throw tableError;
-
-            // UI
             setImages((prev) => prev.filter((img) => img.id !== item.id));
           } catch (err) {
             Alert.alert("Delete failed", err.message);
@@ -241,8 +187,7 @@ export default function ImageMessagesScreen({ route }) {
     const isEditing = editingId === item.id;
     return (
       <View style={styles.card}>
-        <Image source={{ uri: item.file_url }} style={styles.image} />
-
+        <Image source={{ uri: item.file_url }} style={styles.cardImage} />
         {isEditing ? (
           <>
             <TextInput
@@ -271,9 +216,7 @@ export default function ImageMessagesScreen({ route }) {
           </>
         ) : (
           <>
-            <Text style={styles.captionText}>
-              {item.display_caption || "No caption yet"}
-            </Text>
+            <Text style={styles.captionText}>{item.display_caption || "No caption yet"}</Text>
             <View style={styles.row}>
               <TouchableOpacity style={styles.actionChip} onPress={() => startEdit(item)}>
                 <Feather name="edit-2" size={14} color="#7FB3D5" />
@@ -291,30 +234,22 @@ export default function ImageMessagesScreen({ route }) {
   };
 
   return (
-    <LinearGradient
-      colors={["#FDF6E3", "#7FB3D5"]} // beige → pastel blue (match CapsuleList)
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={{ flex: 1 }}
-    >
+    <LinearGradient colors={["#FDF6E3", "#7FB3D5"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1 }}>
-        {/* Header */}
+        {/* Compact header (text only) */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Image Files</Text>
         </View>
 
+        {/* Big decorative image (independent from header) */}
+        <View pointerEvents="none" style={styles.heroImageWrap}>
+          <Image source={require("../assets/boo.png")} style={styles.heroImage} resizeMode="contain" />
+        </View>
+
         {/* White card container */}
         <View style={styles.containerCard}>
-          <TouchableOpacity
-            style={styles.primaryBtn}
-            onPress={pickAndUploadImage}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FDF6E3" />
-            ) : (
-              <Text style={styles.primaryBtnText}>+ Upload Image</Text>
-            )}
+          <TouchableOpacity style={styles.primaryBtn} onPress={pickAndUploadImage} disabled={loading}>
+            {loading ? <ActivityIndicator color="#FDF6E3" /> : <Text style={styles.primaryBtnText}>+ Upload Image</Text>}
           </TouchableOpacity>
 
           {loading && (
@@ -328,7 +263,6 @@ export default function ImageMessagesScreen({ route }) {
             keyExtractor={(item) => String(item.id)}
             renderItem={renderItem}
             contentContainerStyle={{ paddingTop: 12, paddingBottom: 20 }}
-            // vertical scroll (default)
           />
         </View>
       </SafeAreaView>
@@ -337,7 +271,6 @@ export default function ImageMessagesScreen({ route }) {
 }
 
 const styles = StyleSheet.create({
-  // Compact header like CapsuleList
   header: {
     paddingHorizontal: 16,
     paddingTop: 10,
@@ -351,7 +284,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  // White card shell
+  // Large independent image
+  heroImageWrap: {
+    position: "absolute",
+    top: 6,
+    right: 16,
+    zIndex: 0,
+    opacity: 1,
+  },
+  heroImage: {
+    width: 180,   // ⬅️ bigger image
+    height: 180,
+  },
+
   containerCard: {
     flex: 1,
     marginHorizontal: 16,
@@ -363,7 +308,6 @@ const styles = StyleSheet.create({
     borderColor: "#E0F0FF",
   },
 
-  // Primary blue button
   primaryBtn: {
     backgroundColor: "#7FB3D5",
     paddingVertical: 14,
@@ -375,7 +319,6 @@ const styles = StyleSheet.create({
 
   loadingWrap: { alignItems: "center", justifyContent: "center", marginTop: 8 },
 
-  // Image card
   card: {
     backgroundColor: "#F8FAFF",
     borderRadius: 14,
@@ -384,19 +327,14 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 12,
   },
-  image: {
+  cardImage: {
     width: "100%",
     height: 220,
     borderRadius: 10,
     backgroundColor: "#E0F0FF",
   },
 
-  // Caption display + edit
-  captionText: {
-    marginTop: 10,
-    fontSize: 14,
-    color: "#1f2937",
-  },
+  captionText: { marginTop: 10, fontSize: 14, color: "#1f2937" },
   captionInput: {
     marginTop: 10,
     borderWidth: 1,
@@ -409,7 +347,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  // Action rows/chips
   row: { flexDirection: "row", gap: 8, marginTop: 10 },
 
   actionChip: {
