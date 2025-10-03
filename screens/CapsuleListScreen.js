@@ -25,6 +25,7 @@ export default function CapsuleListScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [query, setQuery] = useState(""); // ← search text
 
   const fetchCapsules = async () => {
     try {
@@ -178,6 +179,13 @@ export default function CapsuleListScreen({ navigation }) {
     );
   };
 
+  // simple filter by title
+  const filteredCapsules = capsules.filter((c) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return (c.title || "").toLowerCase().includes(q);
+  });
+
   return (
     <LinearGradient
       colors={["#FDF6E3", "#7FB3D5"]}   // beige → pastel blue
@@ -188,6 +196,24 @@ export default function CapsuleListScreen({ navigation }) {
       <SafeAreaView style={{ flex: 1 }}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Your Capsules</Text>
+
+          {/* Search bar */}
+          <View style={styles.searchBar}>
+            <Ionicons name="search" size={18} color="#64748b" />
+            <TextInput
+              style={styles.searchInput}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search capsules…"
+              placeholderTextColor="#94a3b8"
+              returnKeyType="search"
+            />
+            {query.length > 0 && (
+              <TouchableOpacity onPress={() => setQuery("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close-circle" size={18} color="#94a3b8" />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         <View pointerEvents="none" style={styles.heroImageWrap}>
@@ -206,7 +232,7 @@ export default function CapsuleListScreen({ navigation }) {
             </View>
           ) : (
             <FlatList
-              data={capsules}
+              data={filteredCapsules}
               keyExtractor={(item) => String(item.id)}
               renderItem={renderItem}
               contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
@@ -252,6 +278,23 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#0f172a",
     letterSpacing: 0.3,
+    marginBottom: 8,
+  },
+
+  // search styles
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.95)",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: "#0f172a",
   },
 
   heroImageWrap: {
