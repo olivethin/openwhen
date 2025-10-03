@@ -1,7 +1,16 @@
-//AccountScreen
-import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, Alert, StyleSheet } from 'react-native';
-import { supabase } from '../supabase/supabase';
+// AccountScreen.js
+import React, { useEffect, useState } from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Image,
+} from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { supabase } from "../supabase/supabase";
 
 export default function AccountScreen({ navigation }) {
   const [user, setUser] = useState(null);
@@ -10,11 +19,11 @@ export default function AccountScreen({ navigation }) {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        // 1. Get the session
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         if (!session?.user) throw new Error("Not signed in");
 
-        // 2. Fetch profile from profiles table
         const { data: profile, error } = await supabase
           .from("profiles")
           .select("username")
@@ -23,7 +32,6 @@ export default function AccountScreen({ navigation }) {
 
         if (error) throw error;
 
-        // 3. Store combined user info (auth + profile)
         setUser({
           id: session.user.id,
           email: session.user.email,
@@ -44,7 +52,7 @@ export default function AccountScreen({ navigation }) {
       await supabase.auth.signOut();
       navigation.reset({
         index: 0,
-        routes: [{ name: 'Register' }],
+        routes: [{ name: "Register" }],
       });
     } catch (err) {
       Alert.alert(err.message);
@@ -53,69 +61,103 @@ export default function AccountScreen({ navigation }) {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#7FB3D5" />
-      </View>
+      <LinearGradient colors={["#FDF6E3", "#B3D9FF"]} style={styles.fullScreen}>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color="#7FB3D5" />
+        </View>
+      </LinearGradient>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.welcome}>
-        Hello, {user?.username}!
-      </Text>
+    <LinearGradient colors={["#FDF6E3", "#B3D9FF"]} style={styles.fullScreen}>
+      <View style={styles.container}>
+        {/* Profile Image */}
+        <View style={styles.avatarWrap}>
+          <Image
+            source={require("../assets/boo.png")}
+            style={styles.avatarImg}
+            resizeMode="cover"
+          />
+        </View>
 
-      <TouchableOpacity style={styles.buttonPrimary} onPress={() => navigation.navigate('CapsuleList')}>
-        <Text style={styles.buttonText}>Go to My Capsules</Text>
-      </TouchableOpacity>
+        <Text style={styles.welcome}>Hello, {user?.username}!</Text>
 
-      <TouchableOpacity style={styles.buttonSecondary} onPress={handleSignOut}>
-        <Text style={styles.buttonText}>Sign Out</Text>
-      </TouchableOpacity>
-    </View>
+        <TouchableOpacity
+          style={styles.buttonPrimary}
+          onPress={() => navigation.navigate("CapsuleList")}
+        >
+          <Text style={styles.buttonText}>Go to My Capsules</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.buttonSecondary} onPress={handleSignOut}>
+          <Text style={styles.buttonSecondaryText}>Sign Out</Text>
+        </TouchableOpacity>
+      </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
+  fullScreen: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#FDF6E3',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 16,
   },
   centered: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FDF6E3',
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarWrap: {
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    borderWidth: 3,
+    borderColor: "#7FB3D5",
+    overflow: "hidden",
+    marginBottom: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarImg: {
+    width: "115%",
+    height: "115%",
   },
   welcome: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 26,
+    fontWeight: "700",
+    color: "#333",
     marginBottom: 30,
-    textAlign: 'center',
-    color: '#333',
+    textAlign: "center",
   },
   buttonPrimary: {
-    backgroundColor: '#7FB3D5',
+    backgroundColor: "#7FB3D5", // soft blue
     padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
+    borderRadius: 12,
+    alignItems: "center",
     marginBottom: 12,
-    width: '80%',
+    width: "80%",
   },
   buttonSecondary: {
-    backgroundColor: '#E57373',
+    backgroundColor: "#FADADD", // pale pink
     padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    width: '80%',
+    borderRadius: 12,
+    alignItems: "center",
+    width: "80%",
   },
   buttonText: {
-    color: '#fff',
-    fontWeight: 'bold',
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  buttonSecondaryText: {
+    color: "#C85C5C", // pink text
+    fontWeight: "bold",
     fontSize: 16,
   },
 });
-
