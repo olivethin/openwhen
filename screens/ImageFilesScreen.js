@@ -9,19 +9,23 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  TextInput,
+  Platform,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy"; // kept as-is per your code
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Feather } from "@expo/vector-icons";
 import { supabase } from "../supabase/supabase";
 
 export default function ImageMessagesScreen({ route }) {
   const { capsule } = route.params;
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editingCaption, setEditingCaption] = useState("");
 
-  // Ask for permission + fetch images
   useEffect(() => {
     (async () => {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -36,12 +40,11 @@ export default function ImageMessagesScreen({ route }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch images from DB
   const fetchImages = async () => {
     try {
       const { data, error } = await supabase
         .from("images")
-        .select("*")
+        .select("*") // includes display_caption if the column exists
         .eq("capsule_id", capsule.id)
         .order("created_at", { ascending: false });
 
@@ -52,7 +55,26 @@ export default function ImageMessagesScreen({ route }) {
     }
   };
 
-  // Pick & upload image
+  // iOS prompt helper (falls back to default)
+  const askForCaption = (suggested = "") =>
+    new Promise((resolve) => {
+      if (Platform.OS === "ios" && typeof Alert.prompt === "function") {
+        Alert.prompt(
+          "Add a caption",
+          "Enter a caption for this image",
+          [
+            { text: "Skip", style: "cancel", onPress: () => resolve("") },
+            { text: "Save", onPress: (t) => resolve((t || "").trim()) },
+          ],
+          "plain-text",
+          suggested
+        );
+      } else {
+        // On Android/web (Expo Go), use empty caption by default
+        resolve("");
+      }
+    });
+
   const pickAndUploadImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -76,6 +98,9 @@ export default function ImageMessagesScreen({ route }) {
       const fileName = fileUri.split("/").pop();
       const storagePath = `${capsule.id}/${fileName}`;
 
+      // Ask for caption
+      const userCaption = await askForCaption("");
+
       setLoading(true);
 
       // Get user
@@ -86,7 +111,7 @@ export default function ImageMessagesScreen({ route }) {
 
       if (!capsule?.id) throw new Error("Capsule ID missing");
 
-      // Read file → bytes (base64 kept as-is per your code)
+      // Read file → bytes
       const fileBase64 = await FileSystem.readAsStringAsync(fileUri, {
         encoding: "base64",
       });
@@ -104,16 +129,36 @@ export default function ImageMessagesScreen({ route }) {
         .getPublicUrl(storagePath);
       const fileUrl = urlData.publicUrl;
 
-      // Insert DB
-      const { error: tableError } = await supabase.from("images").insert([
+      // Insert into DB with caption (if column exists)
+      let insertErr = null;
+      const { error: insertWithCaptionErr } = await supabase.from("images").insert([
         {
           capsule_id: capsule.id,
           user_id: userId,
           file_url: fileUrl,
           storage_path: storagePath,
+          display_caption: userCaption, // requires the column
         },
       ]);
-      if (tableError) throw tableError;
+      insertErr = insertWithCaptionErr;
+
+      // Fallback if column is missing
+      if (insertErr && /column .*display_caption/i.test(insertErr.message)) {
+        const { error: insertNoCaptionErr } = await supabase.from("images").insert([
+          {
+            capsule_id: capsule.id,
+            user_id: userId,
+            file_url: fileUrl,
+            storage_path: storagePath,
+          },
+        ]);
+        if (insertNoCaptionErr) throw insertNoCaptionErr;
+
+        Alert.alert(
+          "Uploaded (without caption)",
+          "To save captions, add a 'display_caption text' column to the 'images' table."
+        );
+      }
 
       fetchImages();
     } catch (err) {
@@ -124,7 +169,39 @@ export default function ImageMessagesScreen({ route }) {
     }
   };
 
-  // Delete image
+  const startEdit = (item) => {
+    setEditingId(item.id);
+    setEditingCaption(item.display_caption || "");
+  };
+
+  const saveCaption = async (itemId) => {
+    try {
+      const { error } = await supabase
+        .from("images")
+        .update({ display_caption: editingCaption })
+        .eq("id", itemId);
+
+      if (error) throw error;
+
+      setImages((prev) =>
+        prev.map((img) =>
+          img.id === itemId ? { ...img, display_caption: editingCaption } : img
+        )
+      );
+      setEditingId(null);
+      setEditingCaption("");
+    } catch (err) {
+      if (/column .*display_caption/i.test(err.message)) {
+        Alert.alert(
+          "Add column required",
+          "Please add 'display_caption text' to the 'images' table to enable captions."
+        );
+      } else {
+        Alert.alert("Save failed", err.message);
+      }
+    }
+  };
+
   const deleteImage = async (item) => {
     Alert.alert("Delete Image", "Do you want to remove this image?", [
       { text: "Cancel", style: "cancel" },
@@ -160,11 +237,58 @@ export default function ImageMessagesScreen({ route }) {
     ]);
   };
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity onLongPress={() => deleteImage(item)} activeOpacity={0.8}>
-      <Image source={{ uri: item.file_url }} style={styles.image} />
-    </TouchableOpacity>
-  );
+  const renderItem = ({ item }) => {
+    const isEditing = editingId === item.id;
+    return (
+      <View style={styles.card}>
+        <Image source={{ uri: item.file_url }} style={styles.image} />
+
+        {isEditing ? (
+          <>
+            <TextInput
+              style={styles.captionInput}
+              placeholder="Write a caption…"
+              placeholderTextColor="#94a3b8"
+              value={editingCaption}
+              onChangeText={setEditingCaption}
+            />
+            <View style={styles.row}>
+              <TouchableOpacity style={styles.primaryChip} onPress={() => saveCaption(item.id)}>
+                <Feather name="check" size={14} color="#FDF6E3" />
+                <Text style={styles.primaryChipText}>Save</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.ghostChip}
+                onPress={() => {
+                  setEditingId(null);
+                  setEditingCaption("");
+                }}
+              >
+                <Feather name="x" size={14} color="#0f172a" />
+                <Text style={styles.ghostChipText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={styles.captionText}>
+              {item.display_caption || "No caption yet"}
+            </Text>
+            <View style={styles.row}>
+              <TouchableOpacity style={styles.actionChip} onPress={() => startEdit(item)}>
+                <Feather name="edit-2" size={14} color="#7FB3D5" />
+                <Text style={styles.actionChipText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.deleteChip} onPress={() => deleteImage(item)}>
+                <Feather name="trash-2" size={14} color="#E75480" />
+                <Text style={styles.deleteChipText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </View>
+    );
+  };
 
   return (
     <LinearGradient
@@ -203,9 +327,8 @@ export default function ImageMessagesScreen({ route }) {
             data={images}
             keyExtractor={(item) => String(item.id)}
             renderItem={renderItem}
-            horizontal
-            contentContainerStyle={{ paddingTop: 12, paddingBottom: 12 }}
-            ItemSeparatorComponent={() => <View style={{ width: 10 }} />}
+            contentContainerStyle={{ paddingTop: 12, paddingBottom: 20 }}
+            // vertical scroll (default)
           />
         </View>
       </SafeAreaView>
@@ -252,11 +375,84 @@ const styles = StyleSheet.create({
 
   loadingWrap: { alignItems: "center", justifyContent: "center", marginTop: 8 },
 
-  // Image tile
+  // Image card
+  card: {
+    backgroundColor: "#F8FAFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E0F0FF",
+    padding: 12,
+    marginBottom: 12,
+  },
   image: {
-    width: 150,
-    height: 150,
-    borderRadius: 12,
+    width: "100%",
+    height: 220,
+    borderRadius: 10,
     backgroundColor: "#E0F0FF",
   },
+
+  // Caption display + edit
+  captionText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: "#1f2937",
+  },
+  captionInput: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: "#E0F0FF",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: "#FFFFFF",
+    color: "#0f172a",
+    fontSize: 14,
+  },
+
+  // Action rows/chips
+  row: { flexDirection: "row", gap: 8, marginTop: 10 },
+
+  actionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#E0F0FF",
+  },
+  actionChipText: { fontSize: 13, color: "#1f2937", fontWeight: "600" },
+
+  deleteChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#FADADD",
+  },
+  deleteChipText: { fontSize: 13, color: "#E75480", fontWeight: "600" },
+
+  primaryChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#7FB3D5",
+  },
+  primaryChipText: { fontSize: 13, color: "#FDF6E3", fontWeight: "700" },
+
+  ghostChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#f1f5f9",
+  },
+  ghostChipText: { fontSize: 13, color: "#0f172a", fontWeight: "700" },
 });
