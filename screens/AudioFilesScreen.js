@@ -1,4 +1,4 @@
-// AudioFilesScreen.js
+// screens/AudioFilesScreen.js
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -10,8 +10,10 @@ import {
   ActivityIndicator,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system/legacy";
-import { Audio } from "expo-av";
+import * as FileSystem from "expo-file-system/legacy"; // (kept as-is per your code)
+import { Audio } from "expo-av"; // (kept as-is)
+import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../supabase/supabase";
 
 export default function AudioFilesScreen({ route }) {
@@ -19,7 +21,7 @@ export default function AudioFilesScreen({ route }) {
   const [audioFiles, setAudioFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [sound, setSound] = useState(null);
-  const [statusText, setStatusText] = useState(""); // ✅ tracks play/pause
+  const [statusText, setStatusText] = useState(""); // tracks play/pause
 
   // Configure iOS audio
   useEffect(() => {
@@ -32,11 +34,10 @@ export default function AudioFilesScreen({ route }) {
       });
     };
     setupAudio();
-
     return () => {
       if (sound) sound.unloadAsync();
     };
-  }, []);
+  }, [sound]);
 
   // Fetch audio files
   const fetchAudioFiles = async () => {
@@ -70,11 +71,11 @@ export default function AudioFilesScreen({ route }) {
       const file = result.assets?.[0];
       if (!file) throw new Error("No file selected");
 
-      // ✅ reject invalid file types
+      // reject invalid file types
       if (!file.name.match(/\.(mp3|wav|m4a)$/i)) {
         Alert.alert(
           "Invalid file",
-          "Only audio files are supported (mp3, wav, m4a). Please do not upload PDFs or other file types."
+          "Only audio files are supported (mp3, wav, m4a)."
         );
         return;
       }
@@ -86,6 +87,7 @@ export default function AudioFilesScreen({ route }) {
       const user = sessionData?.session?.user;
       if (!user) throw new Error("No user session found");
 
+      // Read as base64 (kept as-is with your current code)
       const fileBase64 = await FileSystem.readAsStringAsync(file.uri, {
         encoding: "base64",
       });
@@ -132,10 +134,9 @@ export default function AudioFilesScreen({ route }) {
     try {
       if (sound && statusText === "Playing") {
         await sound.pauseAsync();
-        setStatusText("Paused"); // ✅ now shows paused
+        setStatusText("Paused");
         return;
       }
-
       if (sound && statusText === "Paused") {
         await sound.playAsync();
         setStatusText("Playing");
@@ -188,45 +189,98 @@ export default function AudioFilesScreen({ route }) {
       onPress={() => playAudio(item.file_url)}
       onLongPress={() => deleteAudio(item)}
     >
-      <Text style={{ fontWeight: "bold" }}>{item.file_url.split("/").pop()}</Text>
-      <Text>{statusText || "Tap to Play (hold to delete)"}</Text>
+      <Text style={styles.fileName}>{item.file_url.split("/").pop()}</Text>
+      <Text style={styles.fileHint}>{statusText || "Tap to Play (hold to delete)"}</Text>
     </TouchableOpacity>
   );
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity style={styles.button} onPress={pickAudioFile}>
-        <Text style={styles.buttonText}>+ Upload Audio</Text>
-      </TouchableOpacity>
+    <LinearGradient
+      colors={["#FDF6E3", "#7FB3D5"]} // beige → pastel blue (matches CapsuleList)
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={{ flex: 1 }}
+    >
+      <SafeAreaView style={{ flex: 1 }}>
+        {/* Header to match CapsuleList */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Audio Files</Text>
+        </View>
 
-      {loading ? (
-        <ActivityIndicator size="large" color="#7FB3D5" />
-      ) : (
-        <FlatList
-          data={audioFiles}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={renderItem}
-          contentContainerStyle={{ paddingTop: 20 }}
-        />
-      )}
-    </View>
+        {/* White card container, like CapsuleList content area */}
+        <View style={styles.containerCard}>
+          <TouchableOpacity style={styles.primaryBtn} onPress={pickAudioFile} disabled={loading}>
+            {loading ? (
+              <ActivityIndicator color="#FDF6E3" />
+            ) : (
+              <Text style={styles.primaryBtnText}>+ Upload Audio</Text>
+            )}
+          </TouchableOpacity>
+
+          {loading ? (
+            <View style={styles.loadingWrap}>
+              <ActivityIndicator size="large" color="#7FB3D5" />
+            </View>
+          ) : (
+            <FlatList
+              data={audioFiles}
+              keyExtractor={(item) => String(item.id)}
+              renderItem={renderItem}
+              contentContainerStyle={{ paddingTop: 12, paddingBottom: 20 }}
+            />
+          )}
+        </View>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: "#FDF6E3" },
-  button: {
-    backgroundColor: "#7FB3D5",
-    padding: 15,
-    borderRadius: 8,
-    alignItems: "center",
-    marginBottom: 10,
+  // Top header like CapsuleList
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 10,
+    justifyContent: "center",
   },
-  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#0f172a",
+    letterSpacing: 0.3,
+  },
+
+  // White card shell similar to CapsuleList’s content container
+  containerCard: {
+    flex: 1,
+    marginHorizontal: 16,
+    marginTop: 8,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E0F0FF",
+  },
+
+  // Upload button (same blue)
+  primaryBtn: {
+    backgroundColor: "#7FB3D5",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  primaryBtnText: { color: "#FDF6E3", fontWeight: "700", fontSize: 16 },
+
+  loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
+
+  // List item card (light blue, rounded)
   fileItem: {
     padding: 12,
     backgroundColor: "#E0F0FF",
-    borderRadius: 8,
-    marginBottom: 8,
+    borderRadius: 12,
+    marginBottom: 10,
   },
+  fileName: { fontWeight: "700", color: "#0f172a", marginBottom: 4 },
+  fileHint: { color: "#475569" },
 });
