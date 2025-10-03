@@ -1,5 +1,5 @@
-//WrittenMessagesScreen
-import React, { useState, useEffect } from "react";
+// screens/WrittenMessages.js
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,7 +8,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  ActivityIndicator,
+  Pressable,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons, Feather } from "@expo/vector-icons";
 import { supabase } from "../supabase/supabase";
 
 export default function WrittenMessagesScreen({ route }) {
@@ -17,9 +22,10 @@ export default function WrittenMessagesScreen({ route }) {
   const [newMessage, setNewMessage] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editingText, setEditingText] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  // Fetch messages
-  const fetchMessages = async () => {
+  const fetchMessages = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from("written_messages")
@@ -31,18 +37,21 @@ export default function WrittenMessagesScreen({ route }) {
       setMessages(data || []);
     } catch (err) {
       Alert.alert("Error", err.message);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [capsule.id]);
 
   useEffect(() => {
     fetchMessages();
-  }, []);
+  }, [fetchMessages]);
 
   // Add message
   const saveMessage = async () => {
-    if (!newMessage.trim()) return;
-
+    const text = newMessage.trim();
+    if (!text) return;
     try {
+      setSaving(true);
       const { data: sessionData } = await supabase.auth.getSession();
       const session = sessionData?.session;
       if (!session?.user) throw new Error("No session found");
@@ -51,7 +60,7 @@ export default function WrittenMessagesScreen({ route }) {
         {
           capsule_id: capsule.id,
           user_id: session.user.id,
-          message: newMessage.trim(),
+          message: text,
         },
       ]);
 
@@ -61,15 +70,22 @@ export default function WrittenMessagesScreen({ route }) {
       fetchMessages();
     } catch (err) {
       Alert.alert("Error", err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
   // Update message
   const updateMessage = async (id) => {
+    const text = editingText.trim();
+    if (!text) {
+      Alert.alert("Message required", "Please enter some text.");
+      return;
+    }
     try {
       const { error } = await supabase
         .from("written_messages")
-        .update({ message: editingText })
+        .update({ message: text })
         .eq("id", id);
 
       if (error) throw error;
@@ -88,6 +104,7 @@ export default function WrittenMessagesScreen({ route }) {
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
+        style: "destructive",
         onPress: async () => {
           try {
             const { error } = await supabase
@@ -96,8 +113,7 @@ export default function WrittenMessagesScreen({ route }) {
               .eq("id", id);
 
             if (error) throw error;
-
-            setMessages((prev) => prev.filter((msg) => msg.id !== id));
+            setMessages((prev) => prev.filter((m) => m.id !== id));
           } catch (err) {
             Alert.alert("Delete failed", err.message);
           }
@@ -106,114 +122,261 @@ export default function WrittenMessagesScreen({ route }) {
     ]);
   };
 
-  const renderItem = ({ item }) => (
-    <View style={styles.messageItem}>
-      {editingId === item.id ? (
-        <>
-          <TextInput
-            style={styles.input}
-            value={editingText}
-            onChangeText={setEditingText}
-            placeholder="Edit message..."
-            multiline
-          />
-          <View style={styles.row}>
-            <TouchableOpacity
-              style={styles.saveButton}
-              onPress={() => updateMessage(item.id)}
-            >
-              <Text style={styles.saveButtonText}>Save</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => {
-                setEditingId(null);
-                setEditingText("");
-              }}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
+  const renderItem = ({ item }) => {
+    const isEditing = editingId === item.id;
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.iconBadge}>
+            <Ionicons name="document-text-outline" size={18} color="#7FB3D5" />
           </View>
-        </>
-      ) : (
-        <>
-          <Text style={styles.messageText}>{item.message}</Text>
-          <View style={styles.row}>
-            <TouchableOpacity
-              onPress={() => {
-                setEditingId(item.id);
-                setEditingText(item.message);
-              }}
-            >
-              <Text style={styles.actionText}>Edit</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => deleteMessage(item.id)}>
-              <Text style={styles.actionText}>Delete</Text>
-            </TouchableOpacity>
-          </View>
-        </>
-      )}
-    </View>
-  );
+          <Text style={styles.dateText}>
+            {item.created_at ? new Date(item.created_at).toLocaleString() : ""}
+          </Text>
+        </View>
+
+        {isEditing ? (
+          <>
+            <TextInput
+              style={[styles.input, { minHeight: 90 }]}
+              value={editingText}
+              onChangeText={setEditingText}
+              placeholder="Edit message…"
+              placeholderTextColor="#9aa3af"
+              multiline
+            />
+            <View style={styles.row}>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => updateMessage(item.id)}>
+                <Text style={styles.primaryBtnText}>Save</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.ghostBtn}
+                onPress={() => {
+                  setEditingId(null);
+                  setEditingText("");
+                }}
+              >
+                <Text style={styles.ghostBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={styles.messageText}>{item.message}</Text>
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={styles.actionChip}
+                onPress={() => {
+                  setEditingId(item.id);
+                  setEditingText(item.message);
+                }}
+              >
+                <Feather name="edit-2" size={14} color="#7FB3D5" />
+                <Text style={styles.actionChipText}>Edit</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.deleteChip}
+                onPress={() => deleteMessage(item.id)}
+              >
+                <Feather name="trash-2" size={14} color="#E75480" />
+                <Text style={styles.deleteChipText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </View>
+    );
+  };
 
   return (
-    <View style={styles.container}>
-      <FlatList
-        data={messages}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={renderItem}
-        contentContainerStyle={{ paddingBottom: 20 }}
-      />
+    <LinearGradient
+      colors={["#FDF6E3", "#B3D9FF"]} // beige → softer pastel blue
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={{ flex: 1 }}
+    >
+      <SafeAreaView style={{ flex: 1 }}>
+        {/* Compact header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Written Messages</Text>
+        </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Write a message..."
-        value={newMessage}
-        onChangeText={setNewMessage}
-        multiline
-      />
-      <TouchableOpacity style={styles.button} onPress={saveMessage}>
-        <Text style={styles.buttonText}>+ Add Message</Text>
-      </TouchableOpacity>
-    </View>
+        {/* Content */}
+        <View style={styles.content}>
+          {loading ? (
+            <View style={styles.loadingWrap}>
+              <ActivityIndicator size="large" color="#7FB3D5" />
+              <Text style={{ color: "#6b7280", marginTop: 8 }}>Loading…</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={messages}
+              keyExtractor={(item) => String(item.id)}
+              renderItem={renderItem}
+              contentContainerStyle={{ paddingBottom: 140, paddingHorizontal: 16 }}
+              ListEmptyComponent={
+                <View style={styles.emptyWrap}>
+                  <Text style={styles.emptyEmoji}>✍️</Text>
+                  <Text style={styles.emptyTitle}>No messages yet</Text>
+                  <Text style={styles.emptyText}>Write your first message below.</Text>
+                </View>
+              }
+            />
+          )}
+        </View>
+
+        {/* Composer */}
+        <View style={styles.composerWrap}>
+          <TextInput
+            style={[styles.input, { flex: 1, marginBottom: 0 }]}
+            placeholder="Write a message…"
+            placeholderTextColor="#94a3b8"
+            value={newMessage}
+            onChangeText={setNewMessage}
+            multiline
+          />
+          <Pressable
+            style={({ pressed }) => [
+              styles.addBtn,
+              pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 },
+            ]}
+            onPress={saveMessage}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator color="#FDF6E3" />
+            ) : (
+              <>
+                <Ionicons name="add" size={18} color="#FDF6E3" />
+                <Text style={styles.addBtnText}>Add</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FDF6E3", padding: 20 },
-  messageItem: {
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 10,
+    justifyContent: "center",
+  },
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#0f172a",
+    letterSpacing: 0.3,
+  },
+
+  content: {
+    flex: 1,
+    paddingTop: 8,
+  },
+
+  // Card (message item)
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E0F0FF",
+    marginHorizontal: 16,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+    justifyContent: "space-between",
+  },
+  iconBadge: {
     backgroundColor: "#E0F0FF",
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 10,
+    borderRadius: 999,
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  messageText: { color: "#333", fontSize: 16, marginBottom: 6 },
-  row: { flexDirection: "row", gap: 15 },
-  actionText: { color: "#007BFF", fontSize: 14 },
-  input: {
-    backgroundColor: "#fff",
-    padding: 10,
-    borderRadius: 6,
+  dateText: { fontSize: 12, color: "#64748b" },
+
+  messageText: {
     fontSize: 16,
+    color: "#0f172a",
+    marginBottom: 10,
+    lineHeight: 22,
+  },
+
+  // Chips row
+  actionsRow: { flexDirection: "row", gap: 8 },
+
+  actionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#E0F0FF",
+  },
+  actionChipText: { fontSize: 13, color: "#1f2937", fontWeight: "600" },
+
+  deleteChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#FADADD", // pale pink
+  },
+  deleteChipText: {
+    fontSize: 13,
+    color: "#E75480", // pink text
+    fontWeight: "600",
+  },
+
+  input: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E0F0FF",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: "#0f172a",
+    backgroundColor: "#FFFFFF",
     marginBottom: 10,
   },
-  button: {
-    backgroundColor: "#7FB3D5",
-    padding: 15,
-    borderRadius: 8,
+
+  // Composer area (fixed at bottom)
+  composerWrap: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    bottom: 20,
+    flexDirection: "row",
+    gap: 10,
     alignItems: "center",
   },
-  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-  saveButton: {
-    backgroundColor: "#4CAF50",
-    padding: 6,
-    borderRadius: 6,
+  addBtn: {
+    backgroundColor: "#7FB3D5",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
-  saveButtonText: { color: "#fff", fontSize: 14 },
-  cancelButton: {
-    backgroundColor: "#aaa",
-    padding: 6,
-    borderRadius: 6,
-  },
-  cancelButtonText: { color: "#fff", fontSize: 14 },
+  addBtnText: { color: "#FDF6E3", fontWeight: "700" },
+
+  loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
+
+  emptyWrap: { alignItems: "center", paddingTop: 32 },
+  emptyEmoji: { fontSize: 40, marginBottom: 6 },
+  emptyTitle: { fontSize: 18, fontWeight: "800", color: "#0f172a", marginBottom: 4 },
+  emptyText: { color: "#64748b" },
 });

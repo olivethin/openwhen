@@ -1,59 +1,114 @@
-// CapsuleDetailScreen.js
+// screens/CapsuleDetailScreen.js
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+} from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons, Feather } from "@expo/vector-icons";
 
 export default function CapsuleDetailScreen({ route, navigation }) {
   const { capsule } = route.params;
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{capsule.title}</Text>
+    <LinearGradient
+      colors={["#FDF6E3", "#7FB3D5"]} // beige → pastel blue
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={{ flex: 1 }}
+    >
+      <SafeAreaView style={{ flex: 1 }}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Capsule Details</Text>
+        </View>
 
-      <TouchableOpacity
-        style={styles.optionButton}
-        onPress={() => navigation.navigate("WrittenMessages", { capsule })}
-      >
-        <Text style={styles.optionText}> Written Messages</Text>
-      </TouchableOpacity>
+        {/* Content */}
+        <View style={styles.content}>
+          <TouchableOpacity
+            style={styles.navCard}
+            onPress={() => navigation.navigate("WrittenMessages", { capsule })}
+          >
+            <View style={styles.navLeft}>
+              <Feather name="edit-3" size={18} color="#7FB3D5" />
+              <Text style={styles.navText}>Written Messages</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#7FB3D5" />
+          </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.optionButton}
-        onPress={() => navigation.navigate("AudioFiles", { capsule })}
-      >
-        <Text style={styles.optionText}> Audio Files</Text>
-      </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.navCard}
+            onPress={() => navigation.navigate("AudioFiles", { capsule })}
+          >
+            <View style={styles.navLeft}>
+              <Feather name="mic" size={18} color="#7FB3D5" />
+              <Text style={styles.navText}>Audio Files</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#7FB3D5" />
+          </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.optionButton}
-        onPress={() => navigation.navigate("ImageFiles", { capsule })}
-      >
-        <Text style={styles.optionText}> Image Files</Text>
-      </TouchableOpacity>
-    </View>
+          <TouchableOpacity
+            style={styles.navCard}
+            onPress={() => navigation.navigate("ImageFiles", { capsule })}
+          >
+            <View style={styles.navLeft}>
+              <Feather name="image" size={18} color="#7FB3D5" />
+              <Text style={styles.navText}>Image Files</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#7FB3D5" />
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 10,
+    justifyContent: "center",
+  },
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#0f172a",
+    letterSpacing: 0.3,
+  },
+  content: {
     flex: 1,
-    backgroundColor: "#FDF6E3",
-    padding: 20,
+    paddingHorizontal: 16,
+    paddingTop: 20,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#7FB3D5",
-    marginBottom: 20,
+  navCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: "#E0F0FF",
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
-  optionButton: {
-    backgroundColor: "#E0F0FF",
-    padding: 15,
-    borderRadius: 8,
-    marginBottom: 10,
+  navLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
-  optionText: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#7FB3D5",
+  navText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1f2937",
   },
 });

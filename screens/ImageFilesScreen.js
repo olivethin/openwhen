@@ -1,4 +1,4 @@
-// ImageMessagesScreen.js
+// screens/ImageMessagesScreen.js
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -11,7 +11,9 @@ import {
   ActivityIndicator,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system/legacy";
+import * as FileSystem from "expo-file-system/legacy"; // kept as-is per your code
+import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../supabase/supabase";
 
 export default function ImageMessagesScreen({ route }) {
@@ -31,6 +33,7 @@ export default function ImageMessagesScreen({ route }) {
       }
     })();
     fetchImages();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Fetch images from DB
@@ -53,7 +56,7 @@ export default function ImageMessagesScreen({ route }) {
   const pickAndUploadImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.All, // ✅ allow photos + videos
+        mediaTypes: ImagePicker.MediaTypeOptions.All, // allow photos + videos
         allowsEditing: true,
         quality: 1,
       });
@@ -63,7 +66,7 @@ export default function ImageMessagesScreen({ route }) {
       const asset = result.assets?.[0];
       if (!asset) throw new Error("No file selected");
 
-      // ✅ Reject if the user picked a video
+      // Reject videos
       if (asset.type === "video") {
         Alert.alert("Invalid file", "Videos are not allowed. Please select an image.");
         return;
@@ -71,7 +74,7 @@ export default function ImageMessagesScreen({ route }) {
 
       const fileUri = asset.uri;
       const fileName = fileUri.split("/").pop();
-      const storagePath = `${capsule.id}/${fileName}`; // needed for deletion
+      const storagePath = `${capsule.id}/${fileName}`;
 
       setLoading(true);
 
@@ -83,7 +86,7 @@ export default function ImageMessagesScreen({ route }) {
 
       if (!capsule?.id) throw new Error("Capsule ID missing");
 
-      // Read file → bytes
+      // Read file → bytes (base64 kept as-is per your code)
       const fileBase64 = await FileSystem.readAsStringAsync(fileUri, {
         encoding: "base64",
       });
@@ -95,19 +98,19 @@ export default function ImageMessagesScreen({ route }) {
         .upload(storagePath, byteArray, { upsert: true });
       if (uploadError) throw uploadError;
 
-      // Get public URL
+      // Public URL
       const { data: urlData } = supabase.storage
         .from("capsules")
         .getPublicUrl(storagePath);
       const fileUrl = urlData.publicUrl;
 
-      // Insert into DB with storage_path
+      // Insert DB
       const { error: tableError } = await supabase.from("images").insert([
         {
           capsule_id: capsule.id,
           user_id: userId,
           file_url: fileUrl,
-          storage_path: storagePath, // saved for deletion
+          storage_path: storagePath,
         },
       ]);
       if (tableError) throw tableError;
@@ -132,20 +135,20 @@ export default function ImageMessagesScreen({ route }) {
           try {
             setLoading(true);
 
-            // Delete from storage
+            // Storage
             const { error: storageError } = await supabase.storage
               .from("capsules")
               .remove([item.storage_path]);
             if (storageError) throw storageError;
 
-            // Delete from table
+            // Table
             const { error: tableError } = await supabase
               .from("images")
               .delete()
               .eq("id", item.id);
             if (tableError) throw tableError;
 
-            // Remove from UI
+            // UI
             setImages((prev) => prev.filter((img) => img.id !== item.id));
           } catch (err) {
             Alert.alert("Delete failed", err.message);
@@ -157,43 +160,103 @@ export default function ImageMessagesScreen({ route }) {
     ]);
   };
 
-  // Render each image
   const renderItem = ({ item }) => (
-    <TouchableOpacity onLongPress={() => deleteImage(item)}>
+    <TouchableOpacity onLongPress={() => deleteImage(item)} activeOpacity={0.8}>
       <Image source={{ uri: item.file_url }} style={styles.image} />
     </TouchableOpacity>
   );
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity style={styles.button} onPress={pickAndUploadImage}>
-        <Text style={styles.buttonText}>Upload Image</Text>
-      </TouchableOpacity>
+    <LinearGradient
+      colors={["#FDF6E3", "#7FB3D5"]} // beige → pastel blue (match CapsuleList)
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={{ flex: 1 }}
+    >
+      <SafeAreaView style={{ flex: 1 }}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Image Files</Text>
+        </View>
 
-      {loading && (
-        <ActivityIndicator size="large" color="#7FB3D5" style={{ marginTop: 20 }} />
-      )}
+        {/* White card container */}
+        <View style={styles.containerCard}>
+          <TouchableOpacity
+            style={styles.primaryBtn}
+            onPress={pickAndUploadImage}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FDF6E3" />
+            ) : (
+              <Text style={styles.primaryBtnText}>+ Upload Image</Text>
+            )}
+          </TouchableOpacity>
 
-      <FlatList
-        data={images}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={renderItem}
-        horizontal
-        contentContainerStyle={{ marginTop: 20 }}
-      />
-    </View>
+          {loading && (
+            <View style={styles.loadingWrap}>
+              <ActivityIndicator size="large" color="#7FB3D5" />
+            </View>
+          )}
+
+          <FlatList
+            data={images}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={renderItem}
+            horizontal
+            contentContainerStyle={{ paddingTop: 12, paddingBottom: 12 }}
+            ItemSeparatorComponent={() => <View style={{ width: 10 }} />}
+          />
+        </View>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: "#FDF6E3" },
-  button: {
-    backgroundColor: "#7FB3D5",
-    padding: 15,
-    borderRadius: 8,
-    alignItems: "center",
+  // Compact header like CapsuleList
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 10,
+    justifyContent: "center",
   },
-  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-  image: { width: 150, height: 150, borderRadius: 8, marginRight: 10 },
-});
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#0f172a",
+    letterSpacing: 0.3,
+  },
 
+  // White card shell
+  containerCard: {
+    flex: 1,
+    marginHorizontal: 16,
+    marginTop: 8,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E0F0FF",
+  },
+
+  // Primary blue button
+  primaryBtn: {
+    backgroundColor: "#7FB3D5",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  primaryBtnText: { color: "#FDF6E3", fontWeight: "700", fontSize: 16 },
+
+  loadingWrap: { alignItems: "center", justifyContent: "center", marginTop: 8 },
+
+  // Image tile
+  image: {
+    width: 150,
+    height: 150,
+    borderRadius: 12,
+    backgroundColor: "#E0F0FF",
+  },
+});
