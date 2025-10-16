@@ -12,6 +12,7 @@ import {
   RefreshControl,
   Pressable,
   Image,
+  Platform,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -102,6 +103,63 @@ export default function CapsuleListScreen({ navigation }) {
     ]);
   };
 
+  // 🔒 Capsule Lock / Unlock Logic
+  const handleToggleLock = async (capsule) => {
+    try {
+      if (!capsule.is_locked) {
+        if (Platform.OS === "ios") {
+          Alert.prompt(
+            "Set PIN",
+            "Enter a 4-digit PIN to lock this capsule.",
+            async (pin) => {
+              if (!pin || pin.length !== 4) {
+                Alert.alert("Invalid PIN", "PIN must be 4 digits.");
+                return;
+              }
+              const { error } = await supabase
+                .from("capsules")
+                .update({ is_locked: true, lock_pin: pin })
+                .eq("id", capsule.id);
+              if (error) throw error;
+              fetchCapsules();
+            }
+          );
+        } else {
+          Alert.alert(
+            "Not Supported",
+            "PIN entry prompt is currently available only on iOS."
+          );
+        }
+      } else {
+        if (Platform.OS === "ios") {
+          Alert.prompt(
+            "Unlock Capsule",
+            "Enter your 4-digit PIN to unlock.",
+            async (pin) => {
+              if (pin !== capsule.lock_pin) {
+                Alert.alert("Incorrect PIN", "Try again.");
+                return;
+              }
+              const { error } = await supabase
+                .from("capsules")
+                .update({ is_locked: false, lock_pin: null })
+                .eq("id", capsule.id);
+              if (error) throw error;
+              fetchCapsules();
+            }
+          );
+        } else {
+          Alert.alert(
+            "Not Supported",
+            "PIN entry prompt is currently available only on iOS."
+          );
+        }
+      }
+    } catch (err) {
+      Alert.alert("Error", err.message);
+    }
+  };
+
   const renderItem = ({ item }) => {
     const date = item.created_at ? new Date(item.created_at).toLocaleDateString() : "";
     const isEditing = editingId === item.id;
@@ -112,9 +170,27 @@ export default function CapsuleListScreen({ navigation }) {
           styles.card,
           pressed && { transform: [{ scale: 0.99 }], opacity: 0.95 },
         ]}
-        onPress={() =>
-          !isEditing && navigation.navigate("CapsuleDetail", { capsule: item })
-        }
+        onPress={() => {
+          if (isEditing) return;
+          if (item.is_locked) {
+            if (Platform.OS === "ios") {
+              Alert.prompt("Enter PIN", "This capsule is locked.", (pin) => {
+                if (pin === item.lock_pin) {
+                  navigation.navigate("CapsuleDetail", { capsule: item });
+                } else {
+                  Alert.alert("Incorrect PIN", "Access denied.");
+                }
+              });
+            } else {
+              Alert.alert(
+                "Locked Capsule",
+                "PIN entry is available only on iOS in this version."
+              );
+            }
+          } else {
+            navigation.navigate("CapsuleDetail", { capsule: item });
+          }
+        }}
       >
         <View style={styles.cardHeader}>
           <View style={styles.iconBadge}>
@@ -133,7 +209,10 @@ export default function CapsuleListScreen({ navigation }) {
               placeholderTextColor="#9aa3af"
             />
             <View style={styles.row}>
-              <TouchableOpacity style={styles.primaryBtn} onPress={() => updateCapsule(item.id)}>
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() => updateCapsule(item.id)}
+              >
                 <Text style={styles.primaryBtnText}>Save</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -172,6 +251,21 @@ export default function CapsuleListScreen({ navigation }) {
                 <Feather name="trash-2" size={14} color="#E75480" />
                 <Text style={styles.deleteChipText}>Delete</Text>
               </TouchableOpacity>
+
+              {/* 🔒 Lock/Unlock button */}
+              <TouchableOpacity
+                style={styles.lockChip}
+                onPress={() => handleToggleLock(item)}
+              >
+                <Feather
+                  name={item.is_locked ? "lock" : "unlock"}
+                  size={14}
+                  color={item.is_locked ? "#E75480" : "#7FB3D5"}
+                />
+                <Text style={styles.lockChipText}>
+                  {item.is_locked ? "Unlock" : "Lock"}
+                </Text>
+              </TouchableOpacity>
             </View>
           </>
         )}
@@ -188,7 +282,7 @@ export default function CapsuleListScreen({ navigation }) {
 
   return (
     <LinearGradient
-      colors={["#FDF6E3", "#7FB3D5"]}   // beige → pastel blue
+      colors={["#FDF6E3", "#7FB3D5"]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={{ flex: 1 }}
@@ -209,7 +303,10 @@ export default function CapsuleListScreen({ navigation }) {
               returnKeyType="search"
             />
             {query.length > 0 && (
-              <TouchableOpacity onPress={() => setQuery("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity
+                onPress={() => setQuery("")}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
                 <Ionicons name="close-circle" size={18} color="#94a3b8" />
               </TouchableOpacity>
             )}
@@ -228,7 +325,9 @@ export default function CapsuleListScreen({ navigation }) {
           {loading ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator size="large" color="#7FB3D5" />
-              <Text style={{ color: "#6b7280", marginTop: 8 }}>Loading capsules…</Text>
+              <Text style={{ color: "#6b7280", marginTop: 8 }}>
+                Loading capsules…
+              </Text>
             </View>
           ) : (
             <FlatList
@@ -281,7 +380,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  // search styles
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -343,7 +441,7 @@ const styles = StyleSheet.create({
 
   title: { fontSize: 18, fontWeight: "700", color: "#0f172a", marginBottom: 10 },
 
-  actionsRow: { flexDirection: "row", gap: 8 },
+  actionsRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
 
   actionChip: {
     flexDirection: "row",
@@ -366,6 +464,22 @@ const styles = StyleSheet.create({
     backgroundColor: "#FADADD",
   },
   deleteChipText: {
+    fontSize: 13,
+    color: "#E75480",
+    fontWeight: "600",
+  },
+
+  // 🔒 Lock button styles
+  lockChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#FFF2F2",
+  },
+  lockChipText: {
     fontSize: 13,
     color: "#E75480",
     fontWeight: "600",
@@ -402,7 +516,12 @@ const styles = StyleSheet.create({
 
   emptyWrap: { alignItems: "center", paddingTop: 64 },
   emptyEmoji: { fontSize: 46, marginBottom: 8 },
-  emptyTitle: { fontSize: 18, fontWeight: "800", color: "#0f172a", marginBottom: 4 },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0f172a",
+    marginBottom: 4,
+  },
   emptyText: { color: "#64748b" },
 
   fab: {
@@ -422,3 +541,4 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
 });
+
